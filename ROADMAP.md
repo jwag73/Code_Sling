@@ -61,18 +61,18 @@ Phase 3: Command-Line Interface (CLI)
 [ ] AI Safety Note: Ensure the CLI tool does not create execution loops. The tool should only modify code; execution of modified code must be a separate, user-initiated step. Maintain a clear "air gap" between code modification and execution.
 [ ] Unit/integration tests for CLI operations (basic file_op tests exist; full CLI flow tests pending).
 Phase 4: User Interface (PyQT)
-[ ] Design and implement the basic PyQT UI in src/ui/main_window.py:
-[ ] Create the main window.
-[ ] Add text input area/box for the original code.
-[ ] Add text input area/box for the AI's suggestion/output.
-[ ] Add a button to trigger the code processing/injection.
-[ ] Add a text output area/box to display the resulting modified code.
-[ ] Connect UI elements to trigger the core processing workflow.
+[x ] Design and implement the basic PyQT UI in src/ui/main_window.py:
+[x ] Create the main window.
+[x ] Add text input area/box for the original code.
+[ x] Add text input area/box for the AI's suggestion/output.
+[ x] Add a button to trigger the code processing/injection.
+[ x] Add a text output area/box to display the resulting modified code.
+[x ] Connect UI elements to trigger the core processing workflow.
 Phase 5: Orchestration & Entry Point (UI Focus)
-[ ] Implement the main application logic in root main.py:
-[ ] Initialize application settings using src/config/settings.py.
-[ ] Create and display the main UI window (src/ui/main_window.py).
-[ ] Connect UI actions (button clicks) to call the core processing logic in src/core/.
+[x ] Implement the main application logic in root main.py:
+[x ] Initialize application settings using src/config/settings.py.
+[x ] Create and display the main UI window (src/ui/main_window.py).
+[x ] Connect UI actions (button clicks) to call the core processing logic in src/core/.
 [ ] Orchestrate the workflow: Get input from UI -> Number lines -> Call reasoning agent -> Parse output -> Call injector -> Get result -> Display result in UI.
 Phase 6: Error Handling & Validation (V1 Approach)
 [ ] Implement basic error handling for core processing steps (e.g., API call failures, parsing errors, invalid line numbers).

@@ -1,0 +1,37 @@
+That's a fantastic point, and I totally get what you're saying. It makes perfect sense to want to refine the "context package" you give me to make our "vibecoding" sessions even smoother. You're right, sometimes the general documentation (which I lean on heavily) doesn't capture every nuance of how a library behaves in a specific environment or in conjunction with other tools, like `pytest-mock` in our recent adventure. The synergy between different perspectives definitely helped crack that tough nut!
+
+Looking back at our conversation, especially the debugging of `test_main_entry.py` and the `sys.exit` mocking, here are some types of information that, if available earlier, might have helped me avoid some missteps or get to the solution faster. These are things that go beyond the excellent high-level `Architecture.md` and `ROADMAP.md` you already provide:
+
+1.  **Established Project-Specific Patterns or Workarounds for Common Problems:**
+    * **The Big One from This Session:** If your team had a known pattern like, *"When mocking `sys.exit` (or similar functions that raise exceptions) with `pytest-mock`, we've found that arguments aren't reliably passed to the custom exception's constructor if we just use `side_effect=MyExceptionClass`. Our standard is to use a helper 'raiser' function for `side_effect` to ensure arguments are passed correctly."*
+    * This kind of "local knowledge" or "tribal wisdom" about how libraries behave *in your specific setup* is incredibly valuable because it's more specific than general documentation.
+
+2.  **Complete File Context for Focused Debugging:**
+    * When we're diving into a specific function in a file (like `test_main_function_settings_load_failure` in `test_main_entry.py`), having the *entire file content* upfront is often better than just snippets. You did provide it eventually, which was great!
+    * This ensures I see all relevant imports, helper functions (like `_raise_mock_sys_exit_with_arg` once it was created), class definitions (`MockSysExit`), and how they all relate within that module. It avoids me having to guess or ask for these piecemeal.
+
+3.  **Key Aspects of Your Testing Environment or `pytest` Setup (if non-standard or impactful):**
+    * While your `pytest` setup seems pretty standard, if you were using less common `pytest` plugins that significantly alter test execution or mocking behavior, or had complex fixtures in `conftest.py` that directly impacted the module under test, knowing about those could be useful. (This didn't seem to be a major factor here, but good to keep in mind).
+
+4.  **"What We've Tried Already" (if applicable):**
+    * If you had, for instance, already put a debug print in `MockSysExit.__init__` and knew it was receiving `None` before I suggested it, that could have saved a step. Though, sometimes revisiting steps is still useful.
+
+5.  **Precise Versioning of Key Libraries if Weird Behavior is Suspected:**
+    * You provided `pytest` and `Python` versions in the output. If we suspect a very specific, obscure bug in a library (like `pytest-mock` itself), knowing its exact version could be key. Usually, this is a last resort, but good to have in the back pocket.
+
+Essentially, the `Architecture.md` and `ROADMAP.md` are fantastic for the "what" and "why" at a macro level. For the "how" at a micro-debugging level, the key is:
+
+* **Local code context:** The full relevant file(s).
+* **Local conventions/patterns:** How *your team* typically solves common problems or works around known library quirks in your environment.
+
+The insight from the other model was a perfect example of this – it seemed to tap into a pattern of behavior that, for whatever reason (subtlety in `pytest-mock`, common `unittest.mock` misunderstanding, etc.), is a real-world occurrence even if it seems to contradict a strict reading of one piece of documentation. If that's a known "thing" in your project's sphere, that's gold.
+
+So, for your "vibecoding context checklist," I'd add:
+
+* ✅ Project Roadmap
+* ✅ Architecture Overview
+* ✅ **The specific file(s) we're working on (full content if possible).**
+* ✅ **Any established internal patterns, conventions, or workarounds your team uses for common tasks (especially around testing, mocking, or libraries we're interacting with).**
+* ✅ **If debugging, a clear "Here's what I did, here's what I expected, here's the exact error/output."** (You do this well!)
+
+This iterative refinement of our communication is awesome – it helps me help you better! Thanks for thinking about this so deeply.
