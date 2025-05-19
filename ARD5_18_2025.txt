@@ -1,0 +1,72 @@
+# ADR-001: Refactor AI Reasoning to a Multi-Shot Process
+
+**Status:** Accepted
+**Date:** 2025-05-18
+
+## Context
+
+The current `ReasoningAgent` uses a single-shot approach to analyze the original code and an AI-generated suggestion, and then directly outputs `INSERT`/`DELETE` instructions, including the exact code content for insertions. This places a significant cognitive load on the AI model, requiring it to perform diffing, intent understanding, and precise code generation simultaneously.
+
+To make this task more manageable for a potentially "weaker" or "mini" AI model, reduce the risk of code hallucination in the generated instructions, and improve debuggability, a new approach is needed. The goal is to leverage the AI's strengths in classification and referencing, while Python handles deterministic tasks like snippet management and final code assembly.
+
+This change primarily impacts the AI interaction layer (`reasoning_agent.py`) and the core components responsible for parsing and applying the AI's instructions (`parser.py`, `injector.py`). Existing functionalities like UI, settings, and the overall session logging framework will be preserved, with the new process being logged within that framework.
+
+## Decision
+
+We will refactor the AI reasoning process into a two-shot approach orchestrated by `src/ai/reasoning_agent.py`, with an intermediate structured state persisted to a file:
+
+1.  **AI Shot 1: Content Analysis, Labeling, and Snippet Extraction**
+    * **Input:** Numbered `original_code` and the raw `ai_suggestion` text.
+    * **AI Task:**
+        * Analyze `original_code` lines and assign labels (e.g., `BACKGROUND_CONTEXT` for static lines, `TARGET_FOR_CHANGE` for lines expected to be modified, `TARGET_FOR_DELETE` for lines to be removed).
+        * Analyze `ai_suggestion` to:
+            * Extract distinct code snippets intended for use, assigning them unique IDs (e.g., `SUGGESTION_SNIPPET_0`, `SUGGESTION_SNIPPET_1`).
+            * Identify textual parts of the suggestion that describe user intent (labeled as `INTENT_TEXT`).
+    * **Output:** Structured data representing these labels, extracted snippets (ID + content), and intent texts.
+
+2.  **Intermediate State Persistence (Handled by `ReasoningAgent` / Python Utilities)**
+    * **Task:** The structured output from AI Shot 1 will be saved to a dedicated file for each processing event (e.g., a JSONL or structured JSON file within the session's data directory, linked to the `event_id`).
+    * **Purpose:** This file serves as a detailed log of AI Shot 1's analysis, an input for AI Shot 2, and allows for potential human review or debugging.
+
+3.  **AI Shot 2: Operational Instruction Generation**
+    * **Input:** The structured data produced by AI Shot 1 (effectively, the content of the intermediate state file).
+    * **AI Task:** Based on the labeled original code, the extracted suggestion snippets (by ID), and the intent texts, generate a sequence of simplified operational commands:
+        * `DELETE <original_line_number_or_range>`
+        * `INSERT SNIPPET <id> BEFORE <original_line_number>`
+        * `REPLACE <original_line_number_or_range> WITH SNIPPET <id>`
+        * The AI should be prompted to flag or issue a warning if it encounters a directive to modify a line labeled `BACKGROUND_CONTEXT`.
+    * **Output:** A string containing these operational commands.
+
+## Consequences
+
+### Impact on Modules
+
+1.  **`src/ai/reasoning_agent.py`:**
+    * Will undergo a major refactor.
+    * The `get_instructions()` method will now orchestrate the two AI shots and the saving of the intermediate state.
+    * New internal logic and prompt engineering will be required for both AI Shot 1 (labeling/extraction) and AI Shot 2 (instruction generation).
+    * Will manage the list of extracted `SUGGESTION_SNIPPETS` from Shot 1 to pass to the `Injector` (via `MainWindow`).
+
+2.  **`src/core/parser.py`:**
+    * The `parse_instructions()` function (or a new dedicated function) will be updated to parse the new instruction format from AI Shot 2, which includes references like `SNIPPET <id>`.
+    * The `ParsedInstruction` data classes (e.g., `InsertInstruction`) may need to be modified or new ones created (e.g., `InsertSnippetInstruction`) to store `snippet_id` instead of, or in addition to, direct `content`.
+
+3.  **`src/core/injector.py`:**
+    * The `apply_instructions()` function will be modified to accept an additional argument: a dictionary mapping `snippet_id` to `snippet_code_content` (this dictionary will be sourced from AI Shot 1's output, passed through `ReasoningAgent` and `MainWindow`).
+    * When processing an `InsertSnippetInstruction` or `ReplaceSnippetInstruction`, the `Injector` will use the `snippet_id` to retrieve the actual code content from this dictionary for injection.
+    * The `REPLACE` operation will be implemented as a deletion of the target range followed by an insertion of the referenced snippet's content.
+
+### Benefits
+* **Simplified Task for AI:** Each AI shot has a more focused and arguably simpler task, better suited for "weaker" or "mini" models.
+* **Reduced Code Hallucination:** The AI model generating final instructions (Shot 2) references pre-extracted snippet IDs instead of generating code content itself, reducing the risk of errors or omissions in the inserted/replaced code.
+* **Improved Debuggability:** The persisted intermediate state from AI Shot 1 provides a clear snapshot of the AI's initial analysis, making it easier to diagnose issues if the final code modification is incorrect. This file serves as a rich, structured log.
+* **Rich Data for Fine-Tuning:** The labeled data and extracted snippets from Shot 1 will be highly valuable for understanding model behavior and creating datasets for future fine-tuning efforts.
+* **Handles "Vibe Coding" Better:** The AI-driven snippet extraction in Shot 1 is potentially more robust for conversational AI suggestions than purely rule-based Python extraction.
+
+### Considerations / Potential Drawbacks
+* **Increased Orchestration Complexity:** Managing a multi-shot AI process within `ReasoningAgent` adds internal complexity.
+* **Latency:** Two sequential AI calls will likely increase the overall processing time compared to a single shot.
+* **Error Propagation:** The quality of AI Shot 2's output is highly dependent on the accuracy of AI Shot 1's labeling and snippet extraction. Errors in Shot 1 will likely lead to incorrect final instructions.
+* **Prompt Engineering:** Requires careful and effective prompt engineering for two distinct AI tasks.
+
+This ADR focuses solely on the architectural changes to the three specified modules (`reasoning_agent.py`, `parser.py`, `injector.py`) and the introduction of the intermediate state file. Integration of this new process into the existing session logging framework and UI (`main_window.py`) will also be necessary but involves adapting how `main_window.py` calls `ReasoningAgent` and what data it logs, rather than fundamental architectural changes *to* `main_window.py` itself beyond data handling.

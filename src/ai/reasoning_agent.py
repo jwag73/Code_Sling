@@ -15,8 +15,10 @@ from typing import Final
 import openai
 from openai import APIError, APIConnectionError, APITimeoutError
 
-from src.config.settings import get_settings
+from src.config.settings import get_settings, AppSettings
 from src.utils.code_utils import add_line_numbers
+
+
 
 _SYSTEM_PROMPT: Final[str] = (
     "You are a precise code-transformation instruction generator. "
@@ -27,16 +29,21 @@ _SYSTEM_PROMPT: Final[str] = (
 class ReasoningAgent:
     """Wrapper around an OpenAI chat model that returns merge instructions."""
 
-    def __init__(self) -> None:
-        settings = get_settings()
-        if not settings.openai_api_key:
+    def __init__(self, settings: AppSettings | None = None) -> None:
+        current_settings: AppSettings
+        if settings is None:
+            current_settings = get_settings()
+        else:
+            current_settings = settings
+
+        if not current_settings.openai_api_key:
             raise ValueError("OpenAI API key not configured in settings.")
 
         self._client = openai.OpenAI(
-            api_key=settings.openai_api_key,
-            timeout=settings.timeout_seconds,
+            api_key=current_settings.openai_api_key,
+            timeout=current_settings.timeout_seconds,
         )
-        self._model_name: str = settings.openai_model
+        self._model_name: str = current_settings.openai_model
 
     # ------------------------------------------------------------------ #
     def get_instructions(self, original_code: str, ai_suggestion: str) -> str:

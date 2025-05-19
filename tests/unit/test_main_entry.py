@@ -46,7 +46,7 @@ def test_main_function_happy_path(mocker):
 
     mock_get_settings.assert_called_once()
     mock_qapplication_constructor.assert_called_once_with(main_module_under_test.sys.argv)
-    mock_mainwindow_constructor.assert_called_once_with()
+    mock_mainwindow_constructor.assert_called_once_with(settings=mock_settings_instance)
     mock_window_instance.show.assert_called_once()
     mock_app_instance.exec.assert_called_once()
     mock_sys_exit.assert_called_once_with(0)

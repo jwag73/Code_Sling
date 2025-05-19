@@ -1,0 +1,123 @@
+Okay, let's lay out a new side roadmap for this significant architectural evolution of your `ReasoningAgent`. This is exciting stuff, aiming for a more robust process with your mini-model! +50 XP for diving into a new design phase!
+
+You're right, this will be a bigger undertaking, but breaking it down will make it manageable. We'll focus on getting the core mechanics in place and integrated, keeping in mind your points about preserving existing functionality (like the session logging) and not touching the GUI/Settings for now. Unit testing will be a crucial follow-up.
+
+Here’s a proposed roadmap:
+
+## Side Roadmap: Implementing Multi-Shot AI Reasoning & Processing
+
+**Goal:** Refactor the `ReasoningAgent` to use a two-shot AI process. Shot 1 will analyze inputs and label/extract key information (original code state, suggestion snippets, intent). This intermediate state will be saved to a structured file (e.g., JSONL/CSV) also serving as a detailed log. Shot 2 will use this intermediate state to generate simplified operational commands (`DELETE`, `INSERT SNIPPET`, `REPLACE SNIPPET`). The `Parser` and `Injector` will be adapted, and the entire process will be logged within the existing session logging framework.
+
+---
+
+### Phase 1: Design & Foundation for Multi-Shot Processing
+
+* **Step 1: Define Intermediate State Schema & Labels**
+    * **Action:** Finalize the set of labels for AI Shot 1 to apply:
+        * To `original_code` lines (e.g., `BACKGROUND_CONTEXT`, `TARGET_FOR_CHANGE`, `TARGET_FOR_DELETE`).
+        * To `ai_suggestion` components (e.g., `INTENT_TEXT`, `SUGGESTION_SNIPPET` with IDs like `SUGGESTION_SNIPPET_0`).
+    * **Action:** Design the structure/schema for the intermediate state file (e.g., a new JSONL file per processing event, or structured sections within a single JSON file). This file will store:
+        * Labeled `original_code` lines.
+        * Extracted `SUGGESTION_SNIPPETS` (ID and multi-line content).
+        * Identified `INTENT_TEXT` segments.
+    * **Action:** Determine the naming convention and storage location for this intermediate state file (e.g., `event_<event_id>_shot1_output.jsonl` within the session's `data_dir`).
+
+* **Step 2: Define Final Operational Instruction Format (Output of AI Shot 2)**
+    * **Action:** Confirm the precise syntax for the simplified instructions:
+        * `DELETE <original_line_number_or_range>`
+        * `INSERT SNIPPET <id> BEFORE <original_line_number>`
+        * `REPLACE <original_line_number_or_range> WITH SNIPPET <id>`
+        * (Consider a `WARNING: <message>` type instruction for problematic cases identified by Shot 2).
+
+* **Step 3: Plan Logging Integration**
+    * **Action:** Outline how the multi-shot process will be represented in the existing `code_processing_event` log entry in `session_N.jsonl`. This includes:
+        * Storing the raw output of AI Shot 1 (or a summary/reference if too verbose).
+        * Storing the path to the new intermediate state file.
+        * Storing the raw output of AI Shot 2 (these are the final operational instructions).
+
+---
+
+### Phase 2: Refactor `ReasoningAgent` for Multi-Shot Orchestration
+
+* **Step 4: Develop AI Shot 1 - Content Analysis & Snippet Extraction**
+    * **Action (Prompt Engineering):** Craft the system and user prompts for the mini-model (AI Shot 1) to analyze `original_code` and `ai_suggestion`, applying the labels defined in Step 1 and extracting/identifying `SUGGESTION_SNIPPETS` and `INTENT_TEXT`.
+    * **Action (Implementation):**
+        * In `ReasoningAgent`, implement the method to make the API call for Shot 1.
+        * Implement Python logic to parse the (potentially text-based or simple JSON) output from Shot 1 into the structured data format designed in Step 1.
+
+* **Step 5: Implement Intermediate State Persistence**
+    * **Action:** Within `ReasoningAgent` (or a new utility class/module), implement the logic to save the structured output of AI Shot 1 to the intermediate file (e.g., `event_<event_id>_shot1_output.jsonl`).
+    * **Explanation:** This file acts as both a crucial input for Shot 2 and a detailed log of Shot 1's "understanding."
+
+* **Step 6: Develop AI Shot 2 - Instruction Generation**
+    * **Action (Prompt Engineering):** Craft the system and user prompts for the mini-model (AI Shot 2). This prompt will take the structured output of Shot 1 (labeled code, identified snippets with IDs, intent texts) as its primary input.
+    * **Action (Implementation):**
+        * In `ReasoningAgent`, implement the method to make the API call for Shot 2.
+        * The AI's task is to generate the final operational instructions (as defined in Step 2) by matching intents and snippets to labeled original code.
+        * Include logic in the prompt or AI's role to flag problematic situations (e.g., trying to modify `BACKGROUND_CONTEXT`).
+
+* **Step 7: Overhaul `ReasoningAgent.get_instructions()` Method**
+    * **Action:** Re-implement this method to orchestrate the full multi-shot sequence:
+        1.  Receive `original_code` and `ai_suggestion`.
+        2.  (Optional: Basic Python pre-processing on `ai_suggestion` if helpful before Shot 1).
+        3.  Execute AI Shot 1.
+        4.  Parse and structure Shot 1's output.
+        5.  Save this intermediate state to its dedicated file (Step 5).
+        6.  Prepare input for AI Shot 2 using the structured data from Shot 1.
+        7.  Execute AI Shot 2.
+        8.  Return the raw string of operational instructions from Shot 2.
+    * **Action:** Implement robust error handling for each AI call and intermediate processing step. If a shot fails, this needs to be gracefully handled and logged.
+
+---
+
+### Phase 3: Adapt Core Processing (`Parser` & `Injector`)
+
+* **Step 8: Update Data Models in `parser.py` (If Necessary)**
+    * **Action:** Review `ParsedInstruction` and related data classes.
+    * **Action:** Create new or modify existing classes to represent instructions like `InsertSnippetInstruction(snippet_id: str, line_before: int)` and `ReplaceSnippetInstruction(snippet_id: str, original_range_tuple: tuple, original_line_start: int)`. The key is that these instructions will now carry `snippet_id` instead of direct code content.
+
+* **Step 9: Modify `parser.py` to Handle New Instructions**
+    * **Action:** Update the `parse_instructions` function to understand and parse the new instruction format coming from AI Shot 2 (e.g., `INSERT SNIPPET X BEFORE Y`). It will populate the new/updated `ParsedInstruction` data classes.
+
+* **Step 10: Enhance `injector.py` to Use Snippets**
+    * **Action:** Modify `apply_instructions` in `injector.py`. It will now need to accept an additional argument, likely a dictionary mapping `snippet_id` to actual `snippet_code_content` (e.g., `suggestion_snippets: Dict[str, str]`).
+    * **Action:** When the `injector` processes an `InsertSnippetInstruction` or `ReplaceSnippetInstruction`, it will use the `snippet_id` to look up the code from the `suggestion_snippets` dictionary and inject that content.
+    * **Action:** Confirm the logic for `REPLACE` (delete the specified range, then insert the content of the referenced snippet at the start of that range).
+
+---
+
+### Phase 4: Integration with UI and Existing Session Logging
+
+* **Step 11: Update `MainWindow._on_process_code_clicked()`**
+    * **Action:** Modify how it calls `reasoning_agent.get_instructions()`. The arguments might be the same, but `MainWindow` will need to retrieve additional data from `ReasoningAgent` (or a structured return object) to facilitate comprehensive logging. This could include:
+        * The path to the intermediate state file generated by Shot 1.
+        * A summary or the full content of AI Shot 1's structured output (if not just relying on the file).
+        * The raw instructions from AI Shot 2 (which is what `get_instructions` will now primarily return).
+        * Any warnings or special flags from the AI shots.
+    * **Action:** Pass this enriched information to `_write_processing_log_entry`.
+
+* **Step 12: Enhance `MainWindow._write_processing_log_entry()`**
+    * **Action:** Modify the `code_processing_event` structure in `session_N.jsonl`.
+    * **Action:** Add new fields to `processing_stages` or create a new top-level key (e.g., `multi_shot_details`) to store:
+        * `shot1_intermediate_file_path: str`
+        * `shot1_output_summary: dict` (e.g., number of snippets, key intents)
+        * `shot2_raw_instructions: str` (this might replace the current `reasoning_agent_llm_output` if that was Shot 1's raw output, or be an additional field).
+        * Any AI-generated warnings.
+    * **Explanation:** This ensures your main session log provides a traceable link to the detailed intermediate state and captures the essence of the multi-shot process.
+
+---
+
+### Phase 5: Initial Manual Testing & Iteration (Pre-Unit Tests)
+
+* **Step 13: End-to-End Manual Testing with Diverse Inputs**
+    * **Action:** Run the application with various types of `original_code` and `ai_suggestion` (simple, complex, conversational, multi-part changes).
+    * **Action:** Carefully inspect:
+        * The intermediate state file (Shot 1 output): Are labels correct? Are snippets extracted properly?
+        * The `session_N.jsonl` file: Is the new multi-shot information logged correctly?
+        * The final `modified_code` in the UI: Is it what you expect?
+* **Step 14: Iterative Prompt Refinement**
+    * **Action:** Based on observations from Step 13, iteratively refine the prompts for AI Shot 1 and AI Shot 2 to improve their accuracy, reliability, and handling of edge cases. This is crucial for the success of the weaker model.
+
+---
+
+This new side roadmap is definitely chunkier, but it breaks the complex change into more digestible phases and steps. It also explicitly includes the design of the intermediate file and the integration back into your existing logging framework. Remember, unit tests will be vital after this implementation phase to ensure each component (new `ReasoningAgent` logic, updated `Parser`, updated `Injector`) works correctly.
